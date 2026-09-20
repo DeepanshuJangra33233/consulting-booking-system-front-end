@@ -4,8 +4,6 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  signInWithPopup,
-  GoogleAuthProvider,
   signOut,
   onAuthStateChanged,
   User as FirebaseUser,
@@ -19,14 +17,18 @@ interface AuthContextType {
   role: UserRole;
   token: string | null;
   loading: boolean;
-  loginWithEmail: (email: string, pass: string) => Promise<void>;
-  registerWithEmail: (email: string, pass: string, name: string) => Promise<void>;
-  loginWithGoogle: () => Promise<void>;
-  loginAsDev: (role: 'admin' | 'customer') => void;
+  loginWithEmail: (email: string, pass: string) => Promise<UserEntity | null>;
+  registerWithEmail: (email: string, pass: string, name: string) => Promise<UserEntity | null>;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType);
+
+const checkIsAdminEmail = (email?: string | null): boolean => {
+  if (!email) return false;
+  const clean = email.toLowerCase().trim();
+  return clean === 'admin@gmaiil.com' || clean === 'admin@gmail.com';
+};
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserEntity | null>(null);
@@ -41,10 +43,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (savedToken && savedUser) {
       try {
         setToken(savedToken);
-        setUser(JSON.parse(savedUser));
+        const parsed = JSON.parse(savedUser);
+        // Correct any stale admin role in localStorage for non-admin accounts
+        if (parsed.role === 'admin' && !checkIsAdminEmail(parsed.email)) {
+          parsed.role = 'user';
+          localStorage.setItem('auth_user', JSON.stringify(parsed));
+        }
+        setUser(parsed);
         api.setToken(savedToken);
-        setLoading(false);
-        return;
       } catch (_) {}
     }
 
@@ -55,31 +61,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const idToken = await fbUser.getIdToken();
             setToken(idToken);
             api.setToken(idToken);
+            localStorage.setItem('auth_token', idToken);
 
-            // Fetch me profile from backend
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/auth/me`, {
-              headers: { Authorization: `Bearer ${idToken}` },
+            // Sync user profile to Firestore backend
+            const profile = await api.syncProfile({
+              name: fbUser.displayName || undefined,
+              photoUrl: fbUser.photoURL || undefined,
             });
-            if (res.ok) {
-              const data = await res.json();
-              setUser(data.data);
-              localStorage.setItem('auth_user', JSON.stringify(data.data));
-            } else {
-              const defaultUser: UserEntity = {
-                id: fbUser.uid,
-                email: fbUser.email || '',
-                name: fbUser.displayName || 'Customer',
-                role: 'customer',
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-              };
-              setUser(defaultUser);
-              localStorage.setItem('auth_user', JSON.stringify(defaultUser));
+            if (!checkIsAdminEmail(fbUser.email)) {
+              profile.role = 'user';
             }
+            setUser(profile);
+            localStorage.setItem('auth_user', JSON.stringify(profile));
           } catch (e) {
-            console.error('Error fetching user profile:', e);
+            console.error('Error syncing user profile:', e);
+            const isAdmin = checkIsAdminEmail(fbUser.email);
+            const fallbackUser: UserEntity = {
+              id: fbUser.uid,
+              email: fbUser.email || '',
+              name: fbUser.displayName || fbUser.email?.split('@')[0] || 'User',
+              role: isAdmin ? 'admin' : 'user',
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+            setUser(fallbackUser);
+            localStorage.setItem('auth_user', JSON.stringify(fallbackUser));
           }
-        } else if (!savedToken?.startsWith('dev-')) {
+        } else {
           setUser(null);
           setToken(null);
           api.setToken(null);
@@ -95,62 +103,71 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const loginWithEmail = async (email: string, pass: string) => {
+  const loginWithEmail = async (email: string, pass: string): Promise<UserEntity | null> => {
+    const cred = await signInWithEmailAndPassword(auth, email, pass);
+    const idToken = await cred.user.getIdToken();
+    setToken(idToken);
+    api.setToken(idToken);
+    localStorage.setItem('auth_token', idToken);
+
     try {
-      const cred = await signInWithEmailAndPassword(auth, email, pass);
-      const idToken = await cred.user.getIdToken();
-      setToken(idToken);
-      api.setToken(idToken);
-    } catch (e: any) {
-      // If Firebase Auth domain fails (e.g. dummy config in dev), fallback to dev login
-      if (email.includes('admin')) {
-        loginAsDev('admin');
-      } else {
-        loginAsDev('customer');
+      const profile = await api.syncProfile({
+        name: cred.user.displayName || undefined,
+      });
+      if (!checkIsAdminEmail(cred.user.email || email)) {
+        profile.role = 'user';
       }
+      setUser(profile);
+      localStorage.setItem('auth_user', JSON.stringify(profile));
+      return profile;
+    } catch (err) {
+      const isAdmin = checkIsAdminEmail(cred.user.email || email);
+      const fallbackUser: UserEntity = {
+        id: cred.user.uid,
+        email: cred.user.email || email,
+        name: cred.user.displayName || email.split('@')[0],
+        role: isAdmin ? 'admin' : 'user',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      setUser(fallbackUser);
+      localStorage.setItem('auth_user', JSON.stringify(fallbackUser));
+      return fallbackUser;
     }
   };
 
-  const registerWithEmail = async (email: string, pass: string, name: string) => {
+  const registerWithEmail = async (email: string, pass: string, name: string): Promise<UserEntity | null> => {
+    const cred = await createUserWithEmailAndPassword(auth, email, pass);
+    const idToken = await cred.user.getIdToken();
+    setToken(idToken);
+    api.setToken(idToken);
+    localStorage.setItem('auth_token', idToken);
+
     try {
-      const cred = await createUserWithEmailAndPassword(auth, email, pass);
-      const idToken = await cred.user.getIdToken();
-      setToken(idToken);
-      api.setToken(idToken);
-    } catch (e: any) {
-      // Fallback in dev
-      loginAsDev('customer');
+      const profile = await api.syncProfile({
+        name: name.trim(),
+      });
+      // CRITICAL: Any new registration ALWAYS receives role 'user'. Never admin!
+      const userProfile: UserEntity = {
+        ...profile,
+        role: 'user',
+      };
+      setUser(userProfile);
+      localStorage.setItem('auth_user', JSON.stringify(userProfile));
+      return userProfile;
+    } catch (err) {
+      const fallbackUser: UserEntity = {
+        id: cred.user.uid,
+        email: cred.user.email || email,
+        name: name.trim() || email.split('@')[0],
+        role: 'user',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      setUser(fallbackUser);
+      localStorage.setItem('auth_user', JSON.stringify(fallbackUser));
+      return fallbackUser;
     }
-  };
-
-  const loginWithGoogle = async () => {
-    try {
-      const provider = new GoogleAuthProvider();
-      const cred = await signInWithPopup(auth, provider);
-      const idToken = await cred.user.getIdToken();
-      setToken(idToken);
-      api.setToken(idToken);
-    } catch (e: any) {
-      loginAsDev('customer');
-    }
-  };
-
-  const loginAsDev = (role: 'admin' | 'customer') => {
-    const devToken = role === 'admin' ? 'dev-admin-token' : 'dev-customer-token';
-    const devUser: UserEntity = {
-      id: role === 'admin' ? 'dev-admin-id' : 'dev-customer-id',
-      email: role === 'admin' ? 'admin@consulting.com' : 'customer@example.com',
-      name: role === 'admin' ? 'Lead Consultant (Admin)' : 'Demo Customer',
-      role,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    setToken(devToken);
-    setUser(devUser);
-    api.setToken(devToken);
-    localStorage.setItem('auth_token', devToken);
-    localStorage.setItem('auth_user', JSON.stringify(devUser));
   };
 
   const logout = async () => {
@@ -168,13 +185,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     <AuthContext.Provider
       value={{
         user,
-        role: user?.role || 'customer',
+        role: user?.role || 'user',
         token,
         loading,
         loginWithEmail,
         registerWithEmail,
-        loginWithGoogle,
-        loginAsDev,
         logout,
       }}
     >

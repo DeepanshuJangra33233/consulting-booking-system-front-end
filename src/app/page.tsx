@@ -12,21 +12,29 @@ import {
   Star,
   Zap,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { api } from '../lib/api';
 import { formatINR } from '../lib/utils';
 import { ServiceEntity } from '../types';
+import { useAuth } from '../context/AuthContext';
 
 export default function HomePage() {
+  const router = useRouter();
+  const { role } = useAuth();
   const [services, setServices] = useState<ServiceEntity[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (role === 'admin') {
+      router.replace('/admin/dashboard');
+      return;
+    }
     api
       .getServices()
       .then((data) => setServices(data))
       .catch((err) => console.error('Failed to load services:', err))
       .finally(() => setLoading(false));
-  }, []);
+  }, [role, router]);
 
   return (
     <div className="flex flex-col min-h-screen">

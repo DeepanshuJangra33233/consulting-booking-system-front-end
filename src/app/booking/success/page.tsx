@@ -130,23 +130,60 @@ function BookingSuccessContent() {
             </div>
           </div>
 
-          {booking.meetingUrl && (
-            <div className="pt-3 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 bg-blue-50/70 p-4 rounded-xl border border-blue-200/60">
-              <div className="flex items-center gap-2 text-blue-900 text-xs font-semibold">
-                <Video className="w-4 h-4 text-blue-600 shrink-0" />
-                <span>Google Meet Room Attached</span>
+          {booking.meetingUrl && (() => {
+            const now = new Date();
+            let isOver = false;
+            let isLive = false;
+            try {
+              const [year, month, day] = booking.schedule.date.split('-').map(Number);
+              const [endH, endM] = booking.schedule.endTime.split(':').map(Number);
+              const [startH, startM] = booking.schedule.startTime.split(':').map(Number);
+              const endDate = new Date(year, month - 1, day, endH, endM);
+              const startDate = new Date(year, month - 1, day, startH, startM);
+              isOver = now.getTime() > endDate.getTime();
+              isLive = now.getTime() >= startDate.getTime() && now.getTime() <= endDate.getTime();
+            } catch (_) {}
+
+            return (
+              <div className="pt-3 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 bg-blue-50/70 p-4 rounded-xl border border-blue-200/60">
+                <div className="flex items-center gap-2 text-blue-900 text-xs font-semibold">
+                  <Video className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span>
+                    {isLive
+                      ? 'Meeting In Progress'
+                      : isOver
+                      ? 'Meeting Concluded'
+                      : booking.meetingUrl.includes('meet.google.com')
+                      ? 'Google Meet Room Attached'
+                      : 'Video Room Ready'}
+                  </span>
+                </div>
+                {!isOver ? (
+                  <a
+                    href={booking.meetingUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`w-full sm:w-auto px-4 py-2 text-white rounded-lg text-xs font-bold inline-flex items-center justify-center gap-1.5 shadow-sm transition ${
+                      isLive
+                        ? 'bg-emerald-600 hover:bg-emerald-700 animate-pulse'
+                        : 'bg-blue-600 hover:bg-blue-700'
+                    }`}
+                  >
+                    <span>
+                      {isLive
+                        ? 'Rejoin Live Meeting'
+                        : 'Join / Rejoin Meeting'}
+                    </span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                ) : (
+                  <span className="text-xs text-slate-500 italic">
+                    Scheduled call has ended
+                  </span>
+                )}
               </div>
-              <a
-                href={booking.meetingUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full sm:w-auto px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold inline-flex items-center justify-center gap-1.5 shadow-sm transition"
-              >
-                <span>Join Google Meet</span>
-                <ExternalLink className="w-3.5 h-3.5" />
-              </a>
-            </div>
-          )}
+            );
+          })()}
         </div>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3">

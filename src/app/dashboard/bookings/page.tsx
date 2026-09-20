@@ -19,7 +19,7 @@ import { BookingEntity } from '../../../types';
 import { useAuth } from '../../../context/AuthContext';
 
 export default function CustomerBookingsPage() {
-  const { user, loginAsDev } = useAuth();
+  const { user } = useAuth();
   const [bookings, setBookings] = useState<BookingEntity[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
@@ -59,15 +59,37 @@ export default function CustomerBookingsPage() {
     }
   };
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const isMeetingActive = (schedule: BookingEntity['schedule']) => {
+    try {
+      const now = new Date();
+      const [year, month, day] = schedule.date.split('-').map(Number);
+      const [endH, endM] = schedule.endTime.split(':').map(Number);
+      const endDate = new Date(year, month - 1, day, endH, endM);
 
-  const upcomingBookings = bookings.filter(
-    (b) => b.schedule.date >= todayStr && b.status !== 'cancelled' && b.status !== 'completed',
-  );
+      const [startH, startM] = schedule.startTime.split(':').map(Number);
+      const startDate = new Date(year, month - 1, day, startH, startM);
 
-  const pastBookings = bookings.filter(
-    (b) => b.schedule.date < todayStr || b.status === 'cancelled' || b.status === 'completed',
-  );
+      const isOver = now.getTime() > endDate.getTime();
+      const isLive = now.getTime() >= startDate.getTime() && now.getTime() <= endDate.getTime();
+      const isUpcoming = now.getTime() < startDate.getTime();
+
+      return { isOver, isLive, isUpcoming };
+    } catch (_) {
+      return { isOver: false, isLive: true, isUpcoming: false };
+    }
+  };
+
+  const upcomingBookings = bookings.filter((b) => {
+    if (b.status === 'cancelled') return false;
+    const { isOver } = isMeetingActive(b.schedule);
+    return !isOver;
+  });
+
+  const pastBookings = bookings.filter((b) => {
+    if (b.status === 'cancelled') return true;
+    const { isOver } = isMeetingActive(b.schedule);
+    return isOver || b.status === 'completed';
+  });
 
   const displayedList = activeTab === 'upcoming' ? upcomingBookings : pastBookings;
 
@@ -78,22 +100,14 @@ export default function CustomerBookingsPage() {
           <Briefcase className="w-12 h-12 text-blue-600 mx-auto mb-4" />
           <h1 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Customer Portal</h1>
           <p className="text-slate-500 dark:text-slate-400 text-xs mb-6">
-            Sign in to view your scheduled consultations and Google Meet invites.
+            Please sign in to your account to view your scheduled consultations and Google Meet invites.
           </p>
-          <div className="space-y-2.5">
-            <Link
-              href="/login"
-              className="w-full block py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow transition"
-            >
-              Sign In with Email / Google
-            </Link>
-            <button
-              onClick={() => loginAsDev('customer')}
-              className="w-full py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs rounded-xl transition"
-            >
-              One-Click Demo Customer Sign In
-            </button>
-          </div>
+          <Link
+            href="/login"
+            className="w-full block py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow transition"
+          >
+            Sign In to Continue
+          </Link>
         </div>
       </div>
     );
@@ -177,80 +191,137 @@ export default function CustomerBookingsPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {displayedList.map((booking) => (
-            <div
-              key={booking.id}
-              className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm hover:shadow transition flex flex-col sm:flex-row sm:items-center justify-between gap-6"
-            >
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-extrabold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded">
-                    {booking.bookingNumber}
-                  </span>
-                  <span
-                    className={`text-[11px] font-bold px-2 py-0.5 rounded-full capitalize ${
-                      booking.status === 'confirmed'
-                        ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                        : booking.status === 'completed'
-                        ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
-                        : booking.status === 'cancelled'
-                        ? 'bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300 border border-red-200 dark:border-red-800'
-                        : 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
-                    }`}
-                  >
-                    {booking.status.replace('_', ' ')}
-                  </span>
-                  <span className="text-xs text-slate-400 font-medium">
-                    {formatINR(booking.amount)}
-                  </span>
+          {displayedList.map((booking) => {
+            const meetingState = isMeetingActive(booking.schedule);
+            const fallbackUrl = `https://meet.jit.si/ConsultingSession-${(booking.bookingNumber || booking.id).replace(/[^a-zA-Z0-9]/g, '')}`;
+            const activeMeetUrl = booking.meetingUrl || fallbackUrl;
+            const isConfirmed = booking.status === 'confirmed';
+
+            return (
+              <div
+                key={booking.id}
+                className={`bg-white dark:bg-slate-900 rounded-2xl border p-6 shadow-sm hover:shadow transition flex flex-col sm:flex-row sm:items-center justify-between gap-6 ${
+                  meetingState.isLive && isConfirmed
+                    ? 'border-emerald-500/50 dark:border-emerald-500/30 ring-1 ring-emerald-500/20'
+                    : 'border-slate-200 dark:border-slate-800'
+                }`}
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs font-extrabold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2 py-0.5 rounded">
+                      {booking.bookingNumber}
+                    </span>
+                    <span
+                      className={`text-[11px] font-bold px-2 py-0.5 rounded-full capitalize ${
+                        booking.status === 'confirmed'
+                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                          : booking.status === 'completed'
+                          ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                          : booking.status === 'cancelled'
+                          ? 'bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300 border border-red-200 dark:border-red-800'
+                          : 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                      }`}
+                    >
+                      {booking.status.replace('_', ' ')}
+                    </span>
+
+                    {/* Live in-progress indicator */}
+                    {meetingState.isLive && isConfirmed && (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
+                        Live Now • Active Call
+                      </span>
+                    )}
+
+                    {/* Concluded indicator */}
+                    {meetingState.isOver && isConfirmed && (
+                      <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500 px-2 py-0.5 bg-slate-100 dark:bg-slate-800 rounded-full">
+                        Meeting Concluded
+                      </span>
+                    )}
+
+                    <span className="text-xs text-slate-400 font-medium">
+                      {formatINR(booking.amount)}
+                    </span>
+                  </div>
+
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white">{booking.serviceName}</h3>
+
+                  <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
+                    <span className="inline-flex items-center gap-1">
+                      <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                      {formatDate(booking.schedule.date)}
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <Clock className="w-3.5 h-3.5 text-slate-400" />
+                      {booking.schedule.startTime} - {booking.schedule.endTime} ({booking.schedule.timezone})
+                    </span>
+                  </div>
+
+                  {booking.customer.agenda && (
+                    <p className="text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800 max-w-xl">
+                      <strong className="text-slate-700 dark:text-slate-200">Agenda:</strong> {booking.customer.agenda}
+                    </p>
+                  )}
+
+                  {/* Guaranteed Direct Meeting Link */}
+                  {isConfirmed && (
+                    <div className="flex items-center gap-2 pt-1">
+                      <Video className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                      <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">Video Link:</span>
+                      <a
+                        href={activeMeetUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs font-semibold text-blue-600 dark:text-blue-400 hover:underline truncate max-w-xs sm:max-w-md inline-flex items-center gap-1"
+                      >
+                        {activeMeetUrl}
+                        <ExternalLink className="w-3 h-3 shrink-0" />
+                      </a>
+                    </div>
+                  )}
                 </div>
 
-                <h3 className="text-base font-bold text-slate-900 dark:text-white">{booking.serviceName}</h3>
+                {/* Actions */}
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
+                  {/* Primary Join Action Button for confirmed sessions */}
+                  {isConfirmed && (
+                    <a
+                      href={activeMeetUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={`px-4 py-2.5 rounded-xl text-xs font-bold inline-flex items-center justify-center gap-2 shadow-sm transition ${
+                        meetingState.isLive
+                          ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-500/20 animate-pulse'
+                          : meetingState.isOver
+                          ? 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300'
+                          : 'bg-blue-600 hover:bg-blue-700 text-white'
+                      }`}
+                    >
+                      <Video className="w-4 h-4" />
+                      <span>
+                        {meetingState.isLive
+                          ? 'Join Video Call (Live Now)'
+                          : meetingState.isOver
+                          ? 'Re-open Meeting Link'
+                          : 'Join / Open Video Call'}
+                      </span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
 
-                <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 dark:text-slate-400">
-                  <span className="inline-flex items-center gap-1">
-                    <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                    {formatDate(booking.schedule.date)}
-                  </span>
-                  <span className="inline-flex items-center gap-1">
-                    <Clock className="w-3.5 h-3.5 text-slate-400" />
-                    {booking.schedule.startTime} - {booking.schedule.endTime} ({booking.schedule.timezone})
-                  </span>
+                  {isConfirmed && !meetingState.isOver && (
+                    <button
+                      onClick={() => setCancellingId(booking.id)}
+                      className="px-3.5 py-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-xl text-xs font-semibold transition"
+                    >
+                      Cancel Session
+                    </button>
+                  )}
                 </div>
-
-                {booking.customer.agenda && (
-                  <p className="text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/60 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800 max-w-xl">
-                    <strong className="text-slate-700 dark:text-slate-200">Agenda:</strong> {booking.customer.agenda}
-                  </p>
-                )}
               </div>
-
-              {/* Actions */}
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
-                {booking.meetingUrl && booking.status === 'confirmed' && (
-                  <a
-                    href={booking.meetingUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold inline-flex items-center justify-center gap-1.5 shadow-sm transition"
-                  >
-                    <Video className="w-3.5 h-3.5" />
-                    <span>Join Google Meet</span>
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                )}
-
-                {booking.status === 'confirmed' && (
-                  <button
-                    onClick={() => setCancellingId(booking.id)}
-                    className="px-3.5 py-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-xl text-xs font-semibold transition"
-                  >
-                    Cancel Session
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

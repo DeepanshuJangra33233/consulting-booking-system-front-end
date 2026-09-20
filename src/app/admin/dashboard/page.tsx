@@ -21,7 +21,7 @@ import { AdminAnalytics } from '../../../types';
 import { useAuth } from '../../../context/AuthContext';
 
 export default function AdminDashboardPage() {
-  const { user, role, loginAsDev } = useAuth();
+  const { user, role } = useAuth();
   const [data, setData] = useState<AdminAnalytics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,30 +33,9 @@ export default function AdminDashboardPage() {
         .then((res) => setData(res))
         .catch((err) => setError(err.message))
         .finally(() => setLoading(false));
-    } else {
-      setLoading(false);
     }
   }, [role]);
 
-  if (role !== 'admin') {
-    return (
-      <div className="max-w-md mx-auto px-4 py-20 text-center">
-        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-8 shadow-sm">
-          <ShieldCheck className="w-12 h-12 text-blue-600 mx-auto mb-4" />
-          <h1 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Admin Portal Access</h1>
-          <p className="text-slate-500 dark:text-slate-400 text-xs mb-6">
-            You must be authenticated as an Admin to view platform analytics and manage services.
-          </p>
-          <button
-            onClick={() => loginAsDev('admin')}
-            className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow transition"
-          >
-            One-Click Sign In as Admin
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   if (loading) {
     return (

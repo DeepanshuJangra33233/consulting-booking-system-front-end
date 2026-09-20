@@ -6,6 +6,7 @@ import {
   BookingEntity,
   ServiceEntity,
   TimeSlot,
+  UserEntity,
 } from '../types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
@@ -62,6 +63,18 @@ class ApiClient {
     }
 
     return json.data !== undefined ? json.data : json;
+  }
+
+  // --- Auth ---
+  async getMe(): Promise<UserEntity> {
+    return this.request<UserEntity>('/auth/me');
+  }
+
+  async syncProfile(data: { name?: string; phone?: string; photoUrl?: string }): Promise<UserEntity> {
+    return this.request<UserEntity>('/auth/sync-profile', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   }
 
   // --- Services ---
@@ -252,6 +265,23 @@ class ApiClient {
   async getAdminCustomers(): Promise<AdminCustomer[]> {
     return this.request<AdminCustomer[]>('/admin/customers');
   }
+
+  // --- Google Calendar & Meet OAuth ---
+  async getCalendarAuthUrl(): Promise<{ success: boolean; url: string }> {
+    return this.request<{ success: boolean; url: string }>('/calendar/auth-url');
+  }
+
+  async exchangeCalendarCode(code: string): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>('/calendar/oauth-token', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    });
+  }
+
+  async getCalendarStatus(): Promise<{ connected: boolean }> {
+    return this.request<{ connected: boolean }>('/calendar/status');
+  }
 }
+
 
 export const api = new ApiClient();

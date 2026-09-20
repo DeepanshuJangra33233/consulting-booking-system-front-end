@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import {
   Calendar as CalendarIcon,
   Clock,
@@ -23,7 +24,13 @@ function BookingForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialServiceId = searchParams.get('serviceId') || '';
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.replace('/login?redirect=/book');
+    }
+  }, [user, authLoading, router]);
 
   // Multi-step states: 1 = Service, 2 = Date, 3 = Time, 4 = Details, 5 = Review
   const [step, setStep] = useState<number>(1);
@@ -119,6 +126,11 @@ function BookingForm() {
       return;
     }
     if (step === 4) {
+      if (!user) {
+        setErrorMessage('Please sign in to your account before proceeding to payment.');
+        router.push('/login');
+        return;
+      }
       if (!formData.name.trim() || formData.name.length < 2) {
         setErrorMessage('Please enter your full name (minimum 2 characters).');
         return;
@@ -161,6 +173,12 @@ function BookingForm() {
 
   // Submit Booking and Launch Razorpay Checkout
   const handleProceedToPayment = async () => {
+    if (!user) {
+      setErrorMessage('Please sign in to your account before proceeding to payment.');
+      router.push('/login');
+      return;
+    }
+
     if (!selectedService || !selectedSlot || !selectedDate) return;
 
     setSubmitting(true);
@@ -185,21 +203,29 @@ function BookingForm() {
 
       // 2. Initiate Razorpay Order
       const orderData = await api.createRazorpayOrder(booking.id);
+      const razorpayKey = orderData.keyId || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
 
-      // 3. Dev / Mock Mode: direct redirect
-      if (orderData.mode === 'mock') {
-        window.location.href = orderData.checkoutUrl;
+      // 3. Fallback only if mock mode and no valid key
+      if (orderData.mode === 'mock' && (!razorpayKey || razorpayKey.includes('mock'))) {
+        const proceedMock = window.confirm(
+          `Demo Payment Gateway: Proceed to simulate test payment confirmation for ${orderData.serviceName}?`
+        );
+        if (proceedMock) {
+          window.location.href = orderData.checkoutUrl;
+        } else {
+          setSubmitting(false);
+        }
         return;
       }
 
-      // 4. Live Mode: Launch Razorpay Standard Checkout Popup
+      // 4. Launch Razorpay Standard Checkout Popup
       const loaded = await loadRazorpayScript();
-      if (!loaded) {
+      if (!loaded || typeof (window as any).Razorpay === 'undefined') {
         throw new Error('Failed to load Razorpay payment gateway. Please check your network connection.');
       }
 
       const options = {
-        key: orderData.keyId,
+        key: razorpayKey,
         amount: orderData.amount,
         currency: orderData.currency,
         name: 'Consulting Advisory',
@@ -245,6 +271,17 @@ function BookingForm() {
       setSubmitting(false);
     }
   };
+
+  if (authLoading || !user) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+        <p className="text-sm font-medium text-slate-600 dark:text-slate-400">
+          Redirecting to sign in...
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
@@ -459,6 +496,23 @@ function BookingForm() {
             <p className="text-slate-500 dark:text-slate-400 text-xs mb-6">
               Provide your contact coordinates and agenda to brief the consultant.
             </p>
+
+            {!user && (
+              <div className="mb-6 p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-850 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <h4 className="text-xs font-bold text-amber-900 dark:text-amber-200">Account Sign In Required</h4>
+                  <p className="text-[11px] text-amber-700 dark:text-amber-400 mt-0.5">
+                    You must sign in to your account before finalizing and paying for a consultation.
+                  </p>
+                </div>
+                <Link
+                  href="/login"
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-sm transition whitespace-nowrap"
+                >
+                  Sign In to Continue
+                </Link>
+              </div>
+            )}
 
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

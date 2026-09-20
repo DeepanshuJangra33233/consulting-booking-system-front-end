@@ -1,4 +1,4 @@
-export type UserRole = 'customer' | 'admin';
+export type UserRole = 'user' | 'admin' | 'customer';
 
 export type BookingStatus =
   | 'pending_payment'
@@ -18,6 +18,7 @@ export interface UserEntity {
   email: string;
   name: string;
   phone?: string;
+  photoUrl?: string;
   role: UserRole;
   createdAt: string;
   updatedAt: string;
@@ -103,15 +104,19 @@ export interface AdminAnalytics {
     cancelledBookings: number;
     pendingPayments: number;
     totalRevenue: number;
+    totalUsers?: number;
     currency: string;
   };
   recentBookings: BookingEntity[];
 }
 
 export interface AdminCustomer {
+  id?: string;
   name: string;
   email: string;
   phone: string;
+  role?: string;
+  createdAt?: string;
   totalBookings: number;
   totalSpent: number;
   lastBookingDate: string;

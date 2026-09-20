@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Mail, Lock, User, UserPlus } from 'lucide-react';
@@ -15,9 +15,11 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (user) {
-    router.push('/dashboard/bookings');
-  }
+  useEffect(() => {
+    if (user) {
+      router.push(user.role === 'admin' ? '/admin/dashboard' : '/dashboard/bookings');
+    }
+  }, [user, router]);
 
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,11 +102,11 @@ export default function RegisterPage() {
             disabled={loading}
             className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-sm transition disabled:opacity-50"
           >
-            {loading ? 'Creating Account...' : 'Sign Up'}
+            {loading ? 'Creating Account...' : 'Sign Up with Email'}
           </button>
         </form>
 
-        <p className="text-center text-xs text-slate-500 dark:text-slate-400">
+        <p className="text-center text-xs text-slate-500 dark:text-slate-400 mt-6">
           Already have an account?{' '}
           <Link href="/login" className="text-blue-600 dark:text-blue-400 font-semibold hover:underline">
             Sign In

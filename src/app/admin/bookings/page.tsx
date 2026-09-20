@@ -297,7 +297,9 @@ export default function AdminBookingsPage() {
 
               {selectedBooking.meetingUrl && (
                 <div>
-                  <span className="text-slate-400 block font-semibold">Google Meet:</span>
+                  <span className="text-slate-400 block font-semibold">
+                    {selectedBooking.meetingUrl.includes('meet.google.com') ? 'Google Meet:' : 'Video Meeting Room:'}
+                  </span>
                   <a
                     href={selectedBooking.meetingUrl}
                     target="_blank"
