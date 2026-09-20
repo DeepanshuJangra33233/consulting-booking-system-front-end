@@ -91,6 +91,22 @@ export default function CustomerBookingsPage() {
     return isOver || b.status === 'completed';
   });
 
+  const generateJitsiUrl = (seed: string): string => {
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    let hash = 0;
+    const cleanSeed = (seed || 'meet').toLowerCase();
+    for (let i = 0; i < cleanSeed.length; i++) {
+      hash = (hash << 5) - hash + cleanSeed.charCodeAt(i);
+      hash |= 0;
+    }
+    let roomCode = '';
+    for (let i = 0; i < 12; i++) {
+      const idx = Math.abs((hash * (i + 1) * 31 + i * 17) % chars.length);
+      roomCode += chars[idx];
+    }
+    return `https://meet.jit.si/consultation-${roomCode}`;
+  };
+
   const displayedList = activeTab === 'upcoming' ? upcomingBookings : pastBookings;
 
   if (!user) {
@@ -100,7 +116,7 @@ export default function CustomerBookingsPage() {
           <Briefcase className="w-12 h-12 text-blue-600 mx-auto mb-4" />
           <h1 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Customer Portal</h1>
           <p className="text-slate-500 dark:text-slate-400 text-xs mb-6">
-            Please sign in to your account to view your scheduled consultations and Google Meet invites.
+            Please sign in to your account to view your scheduled consultations and Jitsi meeting links.
           </p>
           <Link
             href="/login"
@@ -193,8 +209,10 @@ export default function CustomerBookingsPage() {
         <div className="space-y-4">
           {displayedList.map((booking) => {
             const meetingState = isMeetingActive(booking.schedule);
-            const fallbackUrl = `https://meet.jit.si/ConsultingSession-${(booking.bookingNumber || booking.id).replace(/[^a-zA-Z0-9]/g, '')}`;
-            const activeMeetUrl = booking.meetingUrl || fallbackUrl;
+            const fallbackUrl = generateJitsiUrl(booking.bookingNumber || booking.id);
+            const activeMeetUrl = booking.meetingUrl && !booking.meetingUrl.includes('meet.google.com')
+              ? booking.meetingUrl
+              : fallbackUrl;
             const isConfirmed = booking.status === 'confirmed';
 
             return (
@@ -264,11 +282,11 @@ export default function CustomerBookingsPage() {
                     </p>
                   )}
 
-                  {/* Guaranteed Direct Meeting Link */}
+                  {/* Jitsi Meet Link */}
                   {isConfirmed && (
                     <div className="flex items-center gap-2 pt-1">
                       <Video className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                      <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">Video Link:</span>
+                      <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">Jitsi Meet:</span>
                       <a
                         href={activeMeetUrl}
                         target="_blank"
@@ -301,10 +319,10 @@ export default function CustomerBookingsPage() {
                       <Video className="w-4 h-4" />
                       <span>
                         {meetingState.isLive
-                          ? 'Join Video Call (Live Now)'
+                          ? 'Join Jitsi Meet (Live Now)'
                           : meetingState.isOver
-                          ? 'Re-open Meeting Link'
-                          : 'Join / Open Video Call'}
+                          ? 'Re-open Jitsi Meet'
+                          : 'Join Jitsi Meet'}
                       </span>
                       <ExternalLink className="w-3 h-3" />
                     </a>
